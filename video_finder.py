@@ -40,28 +40,48 @@ def _save_video_id(video_id: str):
 
 def find_trending_news_video() -> Optional[Dict]:
     """
-    Search for trending news videos on YouTube.
+    Search for trending news videos and podcast clips on YouTube.
+    Randomly chooses between news and podcast sources.
 
     Returns:
-        Dict with: video_id, title, description, channel_name, duration
+        Dict with: video_id, title, description, channel_name, duration, source_type
         or None if no suitable video found
     """
     try:
+        import random
+
         youtube = _get_youtube_client()
         used_videos = _load_used_videos()
 
-        logger.info("Searching for trending news videos...")
+        logger.info("Searching for trending news and podcast content...")
 
-        # Search for news videos from last 24 hours
-        yesterday = (datetime.utcnow() - timedelta(days=1)).isoformat() + "Z"
+        # Last 48 hours to get more results (news and podcasts)
+        two_days_ago = (datetime.utcnow() - timedelta(days=2)).isoformat() + "Z"
+
+        # Randomly choose between news and podcast search
+        source_type = random.choice(["news", "podcast"])
+
+        if source_type == "podcast":
+            search_queries = [
+                "podcast highlights clips",
+                "Joe Rogan clips",
+                "Lex Fridman clips",
+                "подкаст highlights",
+                "інтервью clips"
+            ]
+            query = random.choice(search_queries)
+            logger.info(f"Searching for podcast content: {query}")
+        else:
+            query = "news breaking politics world"
+            logger.info(f"Searching for news videos: {query}")
 
         search_request = youtube.search().list(
             part="snippet",
-            q="news breaking politics world",
+            q=query,
             type="video",
             regionCode="UA",
             order="viewCount",  # Most viewed first
-            publishedAfter=yesterday,
+            publishedAfter=two_days_ago,
             maxResults=50,
             relevanceLanguage="uk",
             videoCaption="closedCaption",  # Must have captions
@@ -71,10 +91,10 @@ def find_trending_news_video() -> Optional[Dict]:
         videos = search_results.get("items", [])
 
         if not videos:
-            logger.warning("No videos found in search results")
+            logger.warning(f"No videos found for source type: {source_type}")
             return None
 
-        logger.info(f"Found {len(videos)} candidate videos")
+        logger.info(f"Found {len(videos)} candidate videos from {source_type} source")
 
         # Get video details (duration, etc.)
         video_ids = [v["id"]["videoId"] for v in videos]
@@ -123,13 +143,14 @@ def find_trending_news_video() -> Optional[Dict]:
                     "channel_name": snippet["channelTitle"],
                     "duration_seconds": duration_seconds,
                     "view_count": view_count,
+                    "source_type": source_type,
                 }
 
-                logger.info(f"Found suitable video: {result['title'][:60]}...")
+                logger.info(f"Found suitable {source_type} video: {result['title'][:60]}...")
                 logger.info(f"  Duration: {duration_seconds}s, Views: {view_count}")
                 return result
 
-        logger.warning("No suitable videos found after filtering")
+        logger.warning(f"No suitable {source_type} videos found after filtering")
         return None
 
     except Exception as e:

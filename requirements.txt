@@ -1,15 +1,15 @@
 # ─── YouTube Shorts News Bot — Dependencies ─────────────────
 
-# Google Gemini (Ukrainian generation and translation)
+# Google Gemini (Ukrainian generation, translation, and hook text)
 google-genai>=1.0.0
 
-# YouTube video downloader with caption support
+# YouTube video downloader with caption support (VTT format)
 yt-dlp>=2024.1.0
 
 # HTTP requests (YouTube API, etc.)
 requests>=2.31.0
 
-# YouTube API (OAuth)
+# YouTube Data API (read-only, no OAuth needed for search)
 google-api-python-client>=2.130.0
 google-auth>=2.29.0
 google-auth-httplib2>=0.2.0

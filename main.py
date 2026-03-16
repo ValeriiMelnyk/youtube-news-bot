@@ -126,7 +126,12 @@ def main():
 
         # ── Step 2: Download and process video ────────────────
         logger.info("📥 Step 2/5 — Downloading and processing video...")
-        video_path = process_video_pipeline(video_id, tmp)
+        video_path = process_video_pipeline(
+            video_id,
+            video_title=video_info["title"],
+            video_description=video_info["description"],
+            output_dir=tmp,
+        )
         if not video_path:
             raise RuntimeError("Failed to process video. Exiting.")
 

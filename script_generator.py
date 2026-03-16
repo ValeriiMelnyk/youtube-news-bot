@@ -97,6 +97,47 @@ def generate_youtube_metadata(
         return _fallback_metadata(original_title, channel_name)
 
 
+def generate_hook_text(title: str, description: str) -> str:
+    """
+    Generate a short compelling Ukrainian hook text (5-8 words).
+    This is displayed as an overlay at the top of the video.
+
+    Args:
+        title: Original video title
+        description: Original video description
+
+    Returns:
+        Ukrainian hook text (5-8 words), or fallback if error
+    """
+    try:
+        prompt = f"""Generate a SHORT, compelling Ukrainian hook/headline (5-8 words max)
+that would make someone stop scrolling on YouTube Shorts.
+Use ALL CAPS for impact. Can include emoji.
+Return ONLY the hook text, nothing else.
+
+Video title: {title}
+Description excerpt: {description[:100]}"""
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-lite",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=50,
+            )
+        )
+
+        hook = response.text.strip()
+        if hook:
+            logger.info(f"Generated hook: {hook}")
+            return hook
+
+    except Exception as e:
+        logger.error(f"Error generating hook text: {e}")
+
+    return "ДИВИСЬ СКОРШЕ! ⚡"
+
+
 def _fallback_metadata(title: str, channel: str) -> Dict:
     """Fallback metadata if Gemini unavailable"""
     return {
