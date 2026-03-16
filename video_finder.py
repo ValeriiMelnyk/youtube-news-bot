@@ -9,27 +9,17 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-
 
 def _get_youtube_client():
-    """Create authorized YouTube API client from OAuth refresh token"""
-    creds = Credentials(
-        token=None,
-        refresh_token=os.environ.get("YOUTUBE_REFRESH_TOKEN"),
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=os.environ.get("YOUTUBE_CLIENT_ID"),
-        client_secret=os.environ.get("YOUTUBE_CLIENT_SECRET"),
-        scopes=SCOPES
-    )
-    creds.refresh(Request())
-    return build("youtube", "v3", credentials=creds)
+    """Create YouTube API client using API key (read-only, no OAuth needed)"""
+    api_key = os.environ.get("GEMINI_API_KEY")  # Google API key works for YouTube Data API too
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY not set (used as YouTube Data API key)")
+    return build("youtube", "v3", developerKey=api_key)
 
 
 def _load_used_videos() -> set:
