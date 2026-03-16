@@ -1,8 +1,10 @@
 # ─── YouTube Shorts News Bot — залежності ────────────────────
-# Встановити командою: pip install -r requirements.txt
 
-# OpenAI (GPT + TTS)
+# OpenAI (GPT-4o-mini для сценарію)
 openai>=1.30.0
+
+# Microsoft Edge TTS (безкоштовне озвучення, Ukrainian neural voice)
+edge-tts>=6.1.9
 
 # Читання RSS-стрічок
 feedparser>=6.0.11

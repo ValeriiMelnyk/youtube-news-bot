@@ -1,31 +1,37 @@
 """
-tts_generator.py — Генерація голосу через OpenAI TTS
-Голос: onyx (чоловічий, авторитетний)
+tts_generator.py — Генерація голосу через Microsoft Edge TTS
+Безкоштовно. Голос: uk-UA-OstapNeural (чоловічий, авторитетний, Ukrainian)
+Не потребує API-ключа.
 """
 
-import os
+import asyncio
 import logging
 from pathlib import Path
-from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+async def _synthesize(script: str, output_path: Path) -> None:
+    """Асинхронна генерація аудіо через Edge TTS"""
+    import edge_tts
+
+    # uk-UA-OstapNeural — чоловічий нейронний голос українською
+    communicate = edge_tts.Communicate(
+        text=script,
+        voice="uk-UA-OstapNeural",
+        rate="-5%",    # трохи повільніше для кращої розбірливості
+        volume="+0%"
+    )
+    await communicate.save(str(output_path))
 
 
 def generate_audio(script: str, output_path: Path) -> Path:
     """
     Перетворити текст сценарію на голосовий MP3 файл.
-
-    Параметри:
-        script      — текст сценарію (100–200 слів)
-        output_path — куди зберегти MP3 файл
-
-    Повертає: Path до збереженого MP3
+    Використовує Microsoft Edge TTS — безкоштовно, без API-ключа.
     """
-    logger.info(f"TTS: {len(script)} символів → {output_path.name}")
+    logger.info(f"Edge TTS: {len(script)} символів → {output_path.name}")
 
-    # Очищення тексту від символів, що можуть порушити TTS
     clean_script = (
         script
         .replace("━", "—")
@@ -33,20 +39,12 @@ def generate_audio(script: str, output_path: Path) -> Path:
         .strip()
     )
 
-    response = client.audio.speech.create(
-        model="tts-1",          # Стандартна якість — економніший варіант
-        voice="onyx",           # Чоловічий, авторитетний голос
-        input=clean_script,
-        speed=0.95,             # Трохи повільніше для кращої розбірливості
-        response_format="mp3"
-    )
-
-    response.stream_to_file(str(output_path))
+    asyncio.run(_synthesize(clean_script, output_path))
 
     if not output_path.exists() or output_path.stat().st_size == 0:
-        raise RuntimeError(f"TTS не створив файл: {output_path}")
+        raise RuntimeError(f"Edge TTS не створив файл: {output_path}")
 
-    duration_estimate = len(clean_script.split()) / 2.5  # ~2.5 слова/сек
-    logger.info(f"Аудіо збережено. Приблизна тривалість: {duration_estimate:.0f} сек")
+    duration_estimate = len(clean_script.split()) / 2.5
+    logger.info(f"Аудіо збережено. ~{duration_estimate:.0f} сек (uk-UA-OstapNeural)")
 
     return output_path
