@@ -1,5 +1,5 @@
 """
-script_generator.py — Генерація сценарію через Google Gemini 1.5 Flash
+script_generator.py — Генерація сценарію через Google Gemini 2.0 Flash
 Вибирає найважливішу новину та створює 30–45 секундний сценарій
 """
 
@@ -8,19 +8,18 @@ import json
 import logging
 from typing import List, Dict
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    system_instruction=(
-        "Ти — провідний редактор авторитетного українського новинного YouTube-каналу. "
-        "Твій стиль: стриманий, точний, авторитетний — як у BBC або DW. "
-        "Ніякої паніки, ніякого сенсаціоналізму. Тільки факти, подані чітко й зрозуміло. "
-        "Ти завжди відповідаєш ВИКЛЮЧНО коректним JSON без жодного тексту навколо."
-    )
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
+SYSTEM_PROMPT = (
+    "Ти — провідний редактор авторитетного українського новинного YouTube-каналу. "
+    "Твій стиль: стриманий, точний, авторитетний — як у BBC або DW. "
+    "Ніякої паніки, ніякого сенсаціоналізму. Тільки факти, подані чітко й зрозуміло. "
+    "Ти завжди відповідаєш ВИКЛЮЧНО коректним JSON без жодного тексту навколо."
 )
 
 
@@ -34,7 +33,6 @@ def generate_script(articles: List[Dict]) -> Dict:
     - Теги та опис
     """
 
-    # Форматуємо статті для промпту
     articles_text = "\n\n".join([
         f"[{i + 1}] ДЖЕРЕЛО: {a['source']} ({a['lang'].upper()})\n"
         f"ЗАГОЛОВОК: {a['title']}\n"
@@ -56,7 +54,7 @@ def generate_script(articles: List[Dict]) -> Dict:
 
 {{
   "selected_index": <число 1-15>,
-  "yt_title": "<YouTube заголовок до 60 символів, без кирличних великих літер ВСЮДИ, природний>",
+  "yt_title": "<YouTube заголовок до 60 символів, природний>",
   "title_overlay": "<заголовок для відео: 3–6 ВЕЛИКИХ СЛІВ українською>",
   "script": "<сценарій 100-140 слів українською. Починай з чіпляючого речення. Закінчуй закликом підписатися>",
   "key_facts": [
@@ -70,9 +68,11 @@ def generate_script(articles: List[Dict]) -> Dict:
 }}"""
 
     try:
-        response = model.generate_content(
-            user_prompt,
-            generation_config=genai.GenerationConfig(
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
                 temperature=0.65,
                 max_output_tokens=1200,
                 response_mime_type="application/json",
@@ -80,14 +80,13 @@ def generate_script(articles: List[Dict]) -> Dict:
         )
 
         raw = response.text.strip()
-        # Видаляємо можливі markdown-огортки якщо є
+        # Видаляємо можливі markdown-огортки
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
         result = json.loads(raw)
 
-        # Валідація обов'язкових полів
         required_fields = ["yt_title", "title_overlay", "script", "key_facts", "pexels_keywords"]
         for field in required_fields:
             if field not in result:

@@ -1,7 +1,7 @@
 # ─── YouTube Shorts News Bot — залежності ────────────────────
 
-# Google Gemini (безкоштовна генерація сценарію)
-google-generativeai>=0.8.0
+# Google Gemini (безкоштовна генерація сценарію — новий SDK)
+google-genai>=1.0.0
 
 # Microsoft Edge TTS (безкоштовне озвучення, Ukrainian neural voice)
 edge-tts>=6.1.9

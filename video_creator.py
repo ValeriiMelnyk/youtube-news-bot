@@ -273,6 +273,9 @@ def create_video(
 
     # Завантажуємо аудіо і визначаємо тривалість
     audio_clip = mpe.AudioFileClip(str(audio_path))
+    # Обрізаємо на 0.05 сек щоб уникнути moviepy OSError при читанні останніх фреймів
+    safe_duration = max(0.5, audio_clip.duration - 0.05)
+    audio_clip = audio_clip.subclip(0, safe_duration)
     duration = audio_clip.duration + 1.5  # невеликий відступ наприкінці
 
     logger.info(f"Тривалість відео: {duration:.1f} сек")
