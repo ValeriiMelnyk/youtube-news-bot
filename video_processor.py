@@ -45,11 +45,12 @@ def download_video(video_id: str, output_dir: Path) -> Optional[Path]:
         output_template = str(output_dir / "video.%(ext)s")
 
         ydl_opts = {
-            "format": "best[height<=720][ext=mp4]",
+            "format": "best[height<=720][ext=mp4]/best[height<=720]/best",
             "outtmpl": output_template,
             "quiet": False,
             "no_warnings": False,
             "socket_timeout": 30,
+            "extractor_args": {"youtube": {"player_client": ["ios", "mweb"]}},
         }
 
         logger.info(f"Downloading video {video_id}...")
@@ -92,6 +93,7 @@ def download_captions(video_id: str, output_dir: Path) -> Optional[Path]:
             "quiet": False,
             "no_warnings": False,
             "subtitlesformat": "vtt",
+            "extractor_args": {"youtube": {"player_client": ["ios", "mweb"]}},
         }
 
         logger.info(f"Downloading captions for {video_id}...")
