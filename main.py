@@ -6,9 +6,9 @@
 =============================================================
 Щодня автоматично:
   1. Збирає топ-новини зі світових джерел
-  2. Вибирає найважливішу через GPT-4o-mini
+  2. Вибирає найважливішу через Google Gemini 1.5 Flash
   3. Генерує сценарій українською мовою
-  4. Озвучує голосом onyx (авторитетний, чоловічий)
+  4. Озвучує безкоштовним Edge TTS (uk-UA-OstapNeural)
   5. Монтує вертикальне відео 1080x1920
   6. Публікує на YouTube як Short
 """
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 def validate_env():
     """Перевірка наявності обов'язкових змінних середовища"""
     required = [
-        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
         "YOUTUBE_CLIENT_ID",
         "YOUTUBE_CLIENT_SECRET",
         "YOUTUBE_REFRESH_TOKEN",
@@ -63,13 +63,13 @@ def main():
         logger.info(f"   Знайдено {len(articles)} статей з {len(set(a['source'] for a in articles))} джерел")
 
         # ── Крок 2: Генерація сценарію ──────────────────────
-        logger.info("✍️  Крок 2/5 — Генерація сценарію (GPT-4o-mini)...")
+        logger.info("✍️  Крок 2/5 — Генерація сценарію (Gemini 1.5 Flash)...")
         script_data = generate_script(articles)
         logger.info(f"   Заголовок: {script_data.get('yt_title', '—')}")
         logger.info(f"   Ключових фактів: {len(script_data.get('key_facts', []))}")
 
         # ── Крок 3: Озвучення ───────────────────────────────
-        logger.info("🎙️  Крок 3/5 — Генерація аудіо (голос onyx)...")
+        logger.info("🎙️  Крок 3/5 — Генерація аудіо (Edge TTS, uk-UA-OstapNeural)...")
         audio_path = generate_audio(
             script=script_data["script"],
             output_path=tmp / "voice.mp3"

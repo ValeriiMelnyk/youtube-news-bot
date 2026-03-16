@@ -1,5 +1,5 @@
 """
-script_generator.py — Генерація сценарію через GPT-4o-mini
+script_generator.py — Генерація сценарію через Google Gemini 1.5 Flash
 Вибирає найважливішу новину та створює 30–45 секундний сценарій
 """
 
@@ -7,17 +7,21 @@ import os
 import json
 import logging
 from typing import List, Dict
-from openai import OpenAI
+
+import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-
-SYSTEM_PROMPT = """Ти — провідний редактор авторитетного українського новинного YouTube-каналу.
-Твій стиль: стриманий, точний, авторитетний — як у BBC або DW.
-Ніякої паніки, ніякого сенсаціоналізму. Тільки факти, подані чітко й зрозуміло.
-Ти завжди відповідаєш ВИКЛЮЧНО коректним JSON без жодного тексту навколо."""
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+model = genai.GenerativeModel(
+    model_name="gemini-1.5-flash",
+    system_instruction=(
+        "Ти — провідний редактор авторитетного українського новинного YouTube-каналу. "
+        "Твій стиль: стриманий, точний, авторитетний — як у BBC або DW. "
+        "Ніякої паніки, ніякого сенсаціоналізму. Тільки факти, подані чітко й зрозуміло. "
+        "Ти завжди відповідаєш ВИКЛЮЧНО коректним JSON без жодного тексту навколо."
+    )
+)
 
 
 def generate_script(articles: List[Dict]) -> Dict:
@@ -66,32 +70,34 @@ def generate_script(articles: List[Dict]) -> Dict:
 }}"""
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.65,
-            max_tokens=1200,
-            response_format={"type": "json_object"}
+        response = model.generate_content(
+            user_prompt,
+            generation_config=genai.GenerationConfig(
+                temperature=0.65,
+                max_output_tokens=1200,
+                response_mime_type="application/json",
+            )
         )
 
-        raw = response.choices[0].message.content
+        raw = response.text.strip()
+        # Видаляємо можливі markdown-огортки якщо є
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
         result = json.loads(raw)
 
         # Валідація обов'язкових полів
         required_fields = ["yt_title", "title_overlay", "script", "key_facts", "pexels_keywords"]
         for field in required_fields:
             if field not in result:
-                raise ValueError(f"GPT не повернув поле: {field}")
+                raise ValueError(f"Gemini не повернув поле: {field}")
 
         logger.info(f"Сценарій згенеровано. Слів у сценарії: {len(result['script'].split())}")
         return result
 
     except json.JSONDecodeError as e:
-        logger.error(f"GPT повернув некоректний JSON: {e}")
-        # Запасний варіант
+        logger.error(f"Gemini повернув некоректний JSON: {e}")
         return _fallback_script(articles[0] if articles else {})
     except Exception as e:
         logger.error(f"Помилка генерації сценарію: {e}")
@@ -99,7 +105,7 @@ def generate_script(articles: List[Dict]) -> Dict:
 
 
 def _fallback_script(article: Dict) -> Dict:
-    """Запасний сценарій якщо GPT недоступний"""
+    """Запасний сценарій якщо Gemini недоступний"""
     title = article.get("title", "Важливі новини дня")
     return {
         "yt_title": title[:60],

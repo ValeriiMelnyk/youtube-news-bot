@@ -1,7 +1,7 @@
 # ─── YouTube Shorts News Bot — залежності ────────────────────
 
-# OpenAI (GPT-4o-mini для сценарію)
-openai>=1.30.0
+# Google Gemini (безкоштовна генерація сценарію)
+google-generativeai>=0.8.0
 
 # Microsoft Edge TTS (безкоштовне озвучення, Ukrainian neural voice)
 edge-tts>=6.1.9
