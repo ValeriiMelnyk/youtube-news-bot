@@ -7,6 +7,7 @@ video_creator.py — Монтаж YouTube Shorts відео
 import os
 import random
 import logging
+import subprocess
 import requests
 import numpy as np
 from pathlib import Path
@@ -271,12 +272,14 @@ def create_video(
     output_path     — куди зберегти MP4
     """
 
-    # Завантажуємо аудіо і визначаємо тривалість
-    audio_clip = mpe.AudioFileClip(str(audio_path))
-    # Обрізаємо на 0.05 сек щоб уникнути moviepy OSError при читанні останніх фреймів
-    safe_duration = max(0.5, audio_clip.duration - 0.05)
-    audio_clip = audio_clip.subclip(0, safe_duration)
-    duration = audio_clip.duration + 1.5  # невеликий відступ наприкінці
+    # Визначаємо тривалість через ffprobe (надійніше ніж moviepy)
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(audio_path)],
+        capture_output=True, text=True
+    )
+    audio_duration = float(result.stdout.strip()) if result.stdout.strip() else 20.0
+    duration = audio_duration + 1.5  # невеликий відступ наприкінці
 
     logger.info(f"Тривалість відео: {duration:.1f} сек")
 
@@ -287,22 +290,22 @@ def create_video(
     # Текстовий оверлей
     overlay = create_overlay_image(title, key_facts, duration, tmp_dir)
 
-    # Компонування
+    # Компонування (БЕЗ аудіо — додамо через ffmpeg нижче)
     final = mpe.CompositeVideoClip(
         [background, overlay],
         size=(W, H)
     )
-    final = final.set_audio(audio_clip)
     final = final.set_duration(duration)
     final = final.set_fps(FPS)
 
-    # Рендеринг
-    logger.info(f"Рендеринг відео → {output_path.name}...")
+    # Рендеримо тихе відео
+    silent_path = tmp_dir / "silent.mp4"
+    logger.info(f"Рендеринг відео → {silent_path.name}...")
     final.write_videofile(
-        str(output_path),
+        str(silent_path),
         fps=FPS,
         codec="libx264",
-        audio_codec="aac",
+        audio=False,
         bitrate="4000k",
         preset="fast",
         threads=2,
@@ -311,8 +314,20 @@ def create_video(
     )
 
     # Очищення пам'яті
-    audio_clip.close()
     background.close()
     final.close()
+
+    # Додаємо аудіо через ffmpeg (уникаємо moviepy OSError з MP3)
+    logger.info("Додаємо аудіо через ffmpeg...")
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-i", str(silent_path),
+        "-i", str(audio_path),
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        str(output_path)
+    ], check=True, capture_output=True)
 
     return output_path
