@@ -1,0 +1,76 @@
+name: 📺 Daily YouTube Shorts Bot
+
+on:
+  # Щодня о 10:00 за Київським часом (07:00 UTC)
+  schedule:
+    - cron: "0 7 * * *"
+
+  # Ручний запуск через кнопку в GitHub
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "Режим налагодження (не публікувати)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  generate-short:
+    name: Generate & Upload YouTube Short
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      # ── 1. Отримання коду ─────────────────────────────────
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Python ─────────────────────────────────────────
+      - name: 🐍 Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ── 3. Системні залежності ────────────────────────────
+      - name: 📦 Install system packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg \
+            fonts-dejavu-core \
+            fonts-liberation
+          echo "✅ ffmpeg та шрифти встановлено"
+
+      # ── 4. Python пакети ──────────────────────────────────
+      - name: 📦 Install Python packages
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          echo "✅ Python залежності встановлено"
+
+      # ── 5. Генерація та публікація ────────────────────────
+      - name: 🚀 Run News Bot
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          python main.py
+
+      # ── 6. Повідомлення про успіх ─────────────────────────
+      - name: ✅ Done
+        if: success()
+        run: echo "🎉 Відео успішно опубліковано на YouTube!"
+
+      # ── 7. Повідомлення про помилку ───────────────────────
+      - name: ❌ Failed
+        if: failure()
+        run: |
+          echo "❌ Бот завершився з помилкою"
+          echo "Перевір логи вище для деталей"

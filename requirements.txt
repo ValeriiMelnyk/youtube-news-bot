@@ -1,0 +1,32 @@
+# ─── YouTube Shorts News Bot — залежності ────────────────────
+# Встановити командою: pip install -r requirements.txt
+
+# OpenAI (GPT + TTS)
+openai>=1.30.0
+
+# Читання RSS-стрічок
+feedparser>=6.0.11
+
+# Монтаж відео
+moviepy==1.0.3
+numpy>=1.24.0
+
+# Обробка зображень і тексту
+Pillow>=10.3.0
+
+# HTTP-запити (Pexels, завантаження відео)
+requests>=2.31.0
+
+# YouTube API
+google-api-python-client>=2.130.0
+google-auth>=2.29.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
+httplib2>=0.22.0
+
+# Декодер відео (залежність moviepy)
+imageio>=2.34.0
+imageio-ffmpeg>=0.4.9
+
+# Прогрес-бари (опціонально, для moviepy)
+tqdm>=4.66.0

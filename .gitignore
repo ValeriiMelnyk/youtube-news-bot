@@ -1,0 +1,26 @@
+# Секрети — НІКОЛИ не публікувати!
+.env
+youtube_credentials.json
+temp_client_secrets.json
+client_secrets.json
+token.json
+
+# Python кеш
+__pycache__/
+*.py[cod]
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Тимчасові файли
+*.mp4
+*.mp3
+*.png
+tmp/
+temp/
+output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
