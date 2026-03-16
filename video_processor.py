@@ -407,22 +407,74 @@ def create_hook_text_overlay(
         return ""
 
 
-def clip_video(video_path: Path, output_path: Path, duration: int = 45) -> bool:
+def find_best_clip_start(word_segments: List[Dict], video_duration_s: int, clip_duration: int = 45) -> int:
     """
-    Clip first N seconds of video using ffmpeg.
+    Find the best start time (in seconds) for a 45-second clip.
+    Strategy: find the most speech-dense 45-second window in the first half of the video,
+    but never start within the first 45 seconds (skip intro).
+
+    Args:
+        word_segments: List of {word, start_ms, end_ms} from VTT
+        video_duration_s: Total video duration in seconds
+        clip_duration: Desired clip length in seconds
+
+    Returns:
+        Best start time in seconds (minimum 45s, maximum 1/2 of video)
+    """
+    if not word_segments:
+        # No captions — skip 60s of intro for news, 90s for podcasts
+        default_skip = min(90, max(45, video_duration_s // 6))
+        logger.info(f"No captions for clip start detection, skipping {default_skip}s")
+        return default_skip
+
+    clip_ms = clip_duration * 1000
+    min_start_ms = 45_000   # never clip within first 45s
+    max_start_ms = (video_duration_s * 1000) // 2  # search only first half
+
+    if max_start_ms <= min_start_ms:
+        return 45
+
+    # Slide a window of clip_ms and count words that fall within it
+    best_start_ms = min_start_ms
+    best_count = 0
+
+    # Check every 5-second step for efficiency
+    step_ms = 5_000
+    t = min_start_ms
+    while t <= max_start_ms:
+        window_end = t + clip_ms
+        count = sum(
+            1 for seg in word_segments
+            if t <= seg["start_ms"] < window_end
+        )
+        if count > best_count:
+            best_count = count
+            best_start_ms = t
+        t += step_ms
+
+    best_start_s = best_start_ms // 1000
+    logger.info(f"Best clip start: {best_start_s}s ({best_count} words in window)")
+    return best_start_s
+
+
+def clip_video(video_path: Path, output_path: Path, start_sec: int = 0, duration: int = 45) -> bool:
+    """
+    Clip N seconds from a given start position using ffmpeg.
 
     Args:
         video_path: Input MP4 file
         output_path: Output MP4 file
+        start_sec: Start position in seconds (default 0)
         duration: Clip duration in seconds (default 45)
 
     Returns:
         True if successful
     """
     try:
-        logger.info(f"Clipping video to {duration} seconds...")
+        logger.info(f"Clipping video: start={start_sec}s, duration={duration}s")
         cmd = [
             "ffmpeg",
+            "-ss", str(start_sec),
             "-i", str(video_path),
             "-t", str(duration),
             "-c:v", "libx264",
@@ -565,49 +617,73 @@ def process_video_pipeline(
         if not video_path:
             return None
 
-        # Step 2: Clip to 45 seconds
+        # Step 2: Download captions early — needed to find best clip moment
+        caption_path = download_captions(video_id, output_dir)
+        all_segments = []
+        if caption_path:
+            all_segments = parse_vtt_to_word_segments(caption_path)
+
+        # Step 3: Find the best 45-second window (most speech-dense, skip intro)
+        import subprocess as _sp
+        # Get video duration via ffprobe
+        try:
+            probe = _sp.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+                capture_output=True, text=True, timeout=30,
+            )
+            video_duration_s = int(float(probe.stdout.strip()))
+        except Exception:
+            video_duration_s = 600  # fallback 10 min
+
+        clip_start = find_best_clip_start(all_segments, video_duration_s, clip_duration=50)
+
+        # Step 4: Clip to 50 seconds from the best moment
         clipped_path = output_dir / "clipped.mp4"
-        if not clip_video(video_path, clipped_path, duration=45):
+        if not clip_video(video_path, clipped_path, start_sec=clip_start, duration=50):
             logger.warning("Failed to clip video, using original")
             clipped_path = video_path
 
-        # Step 3: Crop to vertical
+        # Step 5: Crop to vertical 9:16
         vertical_path = output_dir / "vertical.mp4"
         if not crop_to_vertical(clipped_path, vertical_path):
             logger.error("Failed to crop to vertical")
             return None
 
-        # Step 4: Download captions and parse to word-level
-        caption_path = download_captions(video_id, output_dir)
-        word_segments = []
-        if caption_path:
-            word_segments = parse_vtt_to_word_segments(caption_path)
+        # Step 6: Filter captions to only the clipped window, then translate
+        clip_start_ms = clip_start * 1000
+        clip_end_ms   = clip_start_ms + 50_000
+        window_segments = [
+            {"word": s["word"],
+             "start_ms": s["start_ms"] - clip_start_ms,
+             "end_ms":   s["end_ms"]   - clip_start_ms}
+            for s in all_segments
+            if clip_start_ms <= s["start_ms"] < clip_end_ms
+        ]
 
-        # Step 5: Translate word segments to Ukrainian
-        if word_segments:
-            word_segments = translate_word_segments_to_ukrainian(word_segments)
+        if window_segments:
+            window_segments = translate_word_segments_to_ukrainian(window_segments)
 
-        # Step 6: Generate hook text
+        # Step 7: Generate hook text
         hook_text = generate_hook_text(video_title, video_description)
 
-        # Step 7: Create ASS subtitle file with word-by-word timing
+        # Step 8: Create word-by-word ASS subtitles
         ass_file = output_dir / "subtitles.ass"
         subtitles_ok = False
-        if word_segments:
-            subtitles_ok = create_word_by_word_ass_subtitles(word_segments, ass_file)
+        if window_segments:
+            subtitles_ok = create_word_by_word_ass_subtitles(window_segments, ass_file)
 
-        # Step 8: Burn subtitles and hook text onto final video
+        # Step 9: Burn subtitles + hook overlay onto final video
         final_path = output_dir / "final.mp4"
-
-        if subtitles_ok and word_segments:
+        if subtitles_ok and window_segments:
             if not burn_subtitles_and_hook(vertical_path, ass_file, hook_text, final_path):
-                logger.warning("Failed to burn subtitles and hook, using video without")
+                logger.warning("Subtitle burn failed, using video without subtitles")
                 final_path = vertical_path
         else:
-            logger.info("No word segments available, using video without word-by-word subtitles")
+            logger.info("No subtitles available, using video without overlays")
             final_path = vertical_path
 
-        logger.info(f"Video processing complete: {final_path}")
+        logger.info(f"✅ Video processing complete: {final_path}")
         return final_path
 
     except Exception as e:

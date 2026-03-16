@@ -1,9 +1,11 @@
 """
-video_finder.py — Find trending news videos on YouTube using YouTube Data API
-Searches for viral news content and filters by duration, view count, and recency.
+video_finder.py — Find trending news videos and podcast clips on YouTube.
+Searches BOTH news and podcast niches simultaneously, returns the most-viewed
+unused video from the combined results.
 """
 
 import os
+import re
 import logging
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -13,10 +15,31 @@ from googleapiclient.discovery import build
 
 logger = logging.getLogger(__name__)
 
+# ── Search query pools ────────────────────────────────────────────────────────
+NEWS_QUERIES = [
+    "breaking news world politics 2025",
+    "world news today latest",
+    "war conflict geopolitics news",
+    "ukraine russia war latest",
+    "middle east news today",
+    "US politics news today",
+    "global news breaking",
+]
+
+PODCAST_QUERIES = [
+    "Joe Rogan Experience clip 2025",
+    "Lex Fridman podcast clip",
+    "Tucker Carlson interview 2025",
+    "podcast viral moment 2025",
+    "interview shocking moment",
+    "podcast highlights this week",
+    "talk show viral clip 2025",
+]
+
 
 def _get_youtube_client():
     """Create YouTube API client using API key (read-only, no OAuth needed)"""
-    api_key = os.environ.get("GEMINI_API_KEY")  # Google API key works for YouTube Data API too
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not set (used as YouTube Data API key)")
     return build("youtube", "v3", developerKey=api_key)
@@ -30,22 +53,63 @@ def _load_used_videos() -> set:
     return set()
 
 
-def _save_video_id(video_id: str):
-    """Append video ID to used_videos.txt"""
-    used_file = Path(__file__).parent / "used_videos.txt"
-    with open(used_file, "a") as f:
-        f.write(f"{video_id}\n")
-    logger.info(f"Saved video ID to used_videos.txt: {video_id}")
+def _search_videos(youtube, query: str, published_after: str, max_results: int = 25) -> List[str]:
+    """Execute a single YouTube search and return list of video IDs."""
+    try:
+        resp = youtube.search().list(
+            part="id",
+            q=query,
+            type="video",
+            order="viewCount",
+            publishedAfter=published_after,
+            maxResults=max_results,
+            videoCaption="closedCaption",
+        ).execute()
+        return [item["id"]["videoId"] for item in resp.get("items", [])]
+    except Exception as e:
+        logger.warning(f"Search failed for '{query}': {e}")
+        return []
+
+
+def _get_video_details(youtube, video_ids: List[str]) -> List[Dict]:
+    """Fetch content details + statistics for a list of video IDs."""
+    if not video_ids:
+        return []
+    try:
+        resp = youtube.videos().list(
+            part="contentDetails,snippet,statistics",
+            id=",".join(video_ids[:50]),
+        ).execute()
+        return resp.get("items", [])
+    except Exception as e:
+        logger.warning(f"Failed to fetch video details: {e}")
+        return []
+
+
+def _parse_iso_duration(duration_str: str) -> int:
+    """Parse ISO 8601 duration string (e.g. PT45M30S) to seconds."""
+    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration_str)
+    if not match:
+        return 0
+    h = int(match.group(1) or 0)
+    m = int(match.group(2) or 0)
+    s = int(match.group(3) or 0)
+    return h * 3600 + m * 60 + s
 
 
 def find_trending_news_video() -> Optional[Dict]:
     """
-    Search for trending news videos and podcast clips on YouTube.
-    Randomly chooses between news and podcast sources.
+    Search for the most-viewed trending news video OR podcast clip.
+    Searches BOTH categories simultaneously, merges results, and returns
+    the highest-view-count video that hasn't been used yet.
+
+    Duration filter: 3–90 minutes (180–5400 s) — wide range to include full podcasts.
+    View filter: >5 000 views (lowered to catch fresher content).
 
     Returns:
-        Dict with: video_id, title, description, channel_name, duration, source_type
-        or None if no suitable video found
+        Dict with: video_id, title, description, channel_name,
+                   duration_seconds, view_count, source_type
+        or None if nothing suitable found.
     """
     try:
         import random
@@ -53,124 +117,78 @@ def find_trending_news_video() -> Optional[Dict]:
         youtube = _get_youtube_client()
         used_videos = _load_used_videos()
 
-        logger.info("Searching for trending news and podcast content...")
+        # Search window: last 72 hours (wider = more variety)
+        since = (datetime.utcnow() - timedelta(hours=72)).isoformat() + "Z"
 
-        # Last 48 hours to get more results (news and podcasts)
-        two_days_ago = (datetime.utcnow() - timedelta(days=2)).isoformat() + "Z"
+        # ── Collect candidates from BOTH niches ──────────────────────────────
+        all_ids: List[tuple] = []   # (video_id, source_type)
 
-        # Randomly choose between news and podcast search
-        source_type = random.choice(["news", "podcast"])
+        # Pick one news query and one podcast query at random for variety
+        news_q = random.choice(NEWS_QUERIES)
+        pod_q  = random.choice(PODCAST_QUERIES)
 
-        if source_type == "podcast":
-            search_queries = [
-                "podcast highlights clips",
-                "Joe Rogan clips",
-                "Lex Fridman clips",
-                "подкаст highlights",
-                "інтервью clips"
-            ]
-            query = random.choice(search_queries)
-            logger.info(f"Searching for podcast content: {query}")
-        else:
-            query = "news breaking politics world"
-            logger.info(f"Searching for news videos: {query}")
+        logger.info(f"🔍 News query:    {news_q}")
+        logger.info(f"🎙️  Podcast query: {pod_q}")
 
-        search_request = youtube.search().list(
-            part="snippet",
-            q=query,
-            type="video",
-            regionCode="UA",
-            order="viewCount",  # Most viewed first
-            publishedAfter=two_days_ago,
-            maxResults=50,
-            relevanceLanguage="uk",
-            videoCaption="closedCaption",  # Must have captions
-        )
+        news_ids    = _search_videos(youtube, news_q,  since, max_results=25)
+        podcast_ids = _search_videos(youtube, pod_q,   since, max_results=25)
 
-        search_results = search_request.execute()
-        videos = search_results.get("items", [])
+        all_ids = [(vid, "news")    for vid in news_ids] + \
+                  [(vid, "podcast") for vid in podcast_ids]
 
-        if not videos:
-            logger.warning(f"No videos found for source type: {source_type}")
+        logger.info(f"Found {len(news_ids)} news + {len(podcast_ids)} podcast candidates")
+
+        if not all_ids:
+            logger.error("No candidates found from any query")
             return None
 
-        logger.info(f"Found {len(videos)} candidate videos from {source_type} source")
+        # ── Fetch details in one batch (up to 50) ────────────────────────────
+        unique_ids = list(dict.fromkeys(vid for vid, _ in all_ids))  # deduplicate, preserve order
+        source_map = {vid: src for vid, src in all_ids}
 
-        # Get video details (duration, etc.)
-        video_ids = [v["id"]["videoId"] for v in videos]
+        details = _get_video_details(youtube, unique_ids[:50])
 
-        # Fetch video details in chunks (API limits)
-        for i in range(0, len(video_ids), 50):
-            batch_ids = video_ids[i:i+50]
-            details_request = youtube.videos().list(
-                part="contentDetails,snippet,statistics",
-                id=",".join(batch_ids)
-            )
-            details_results = details_request.execute()
+        # ── Score each video (sort by view count desc) ────────────────────────
+        scored: List[Dict] = []
+        for item in details:
+            vid_id = item["id"]
 
-            for video_data in details_results.get("items", []):
-                video_id = video_data["id"]
+            if vid_id in used_videos:
+                continue
 
-                # Skip if already used
-                if video_id in used_videos:
-                    logger.debug(f"Skipping already-used video: {video_id}")
-                    continue
+            duration_s = _parse_iso_duration(item["contentDetails"]["duration"])
+            if not (180 <= duration_s <= 5400):        # 3 min – 90 min
+                continue
 
-                # Parse duration (ISO 8601)
-                duration_str = video_data["contentDetails"]["duration"]  # PT45M30S format
-                duration_seconds = _parse_iso_duration(duration_str)
+            view_count = int(item["statistics"].get("viewCount", 0))
+            if view_count < 5000:
+                continue
 
-                # Filter: 3-15 minutes (180-900 seconds)
-                if not (180 <= duration_seconds <= 900):
-                    logger.debug(
-                        f"Skipping {video_id}: duration {duration_seconds}s "
-                        f"(need 180-900s)"
-                    )
-                    continue
+            snippet = item["snippet"]
+            scored.append({
+                "video_id":        vid_id,
+                "title":           snippet["title"],
+                "description":     snippet.get("description", ""),
+                "channel_name":    snippet["channelTitle"],
+                "duration_seconds": duration_s,
+                "view_count":      view_count,
+                "source_type":     source_map.get(vid_id, "news"),
+            })
 
-                # Filter: minimum view count (>10k views)
-                view_count = int(video_data["statistics"].get("viewCount", 0))
-                if view_count < 10000:
-                    logger.debug(f"Skipping {video_id}: only {view_count} views")
-                    continue
+        if not scored:
+            logger.warning("No suitable video found after filtering")
+            return None
 
-                # Passed all filters!
-                snippet = video_data["snippet"]
-                result = {
-                    "video_id": video_id,
-                    "title": snippet["title"],
-                    "description": snippet.get("description", ""),
-                    "channel_name": snippet["channelTitle"],
-                    "duration_seconds": duration_seconds,
-                    "view_count": view_count,
-                    "source_type": source_type,
-                }
+        # Sort by views — most viral first
+        scored.sort(key=lambda x: x["view_count"], reverse=True)
+        best = scored[0]
 
-                logger.info(f"Found suitable {source_type} video: {result['title'][:60]}...")
-                logger.info(f"  Duration: {duration_seconds}s, Views: {view_count}")
-                return result
-
-        logger.warning(f"No suitable {source_type} videos found after filtering")
-        return None
+        logger.info(
+            f"✅ Best video: [{best['source_type'].upper()}] {best['title'][:70]}"
+            f"  |  {best['view_count']:,} views  |  {best['duration_seconds']//60}m"
+        )
+        return best
 
     except Exception as e:
-        logger.error(f"Error finding trending videos: {e}")
+        logger.error(f"Error finding trending video: {e}")
         return None
-
-
-def _parse_iso_duration(duration_str: str) -> int:
-    """Parse ISO 8601 duration string (PT45M30S) to seconds"""
-    import re
-
-    match = re.match(
-        r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?",
-        duration_str
-    )
-    if not match:
-        return 0
-
-    hours = int(match.group(1) or 0)
-    minutes = int(match.group(2) or 0)
-    seconds = int(match.group(3) or 0)
-
-    return hours * 3600 + minutes * 60 + seconds
