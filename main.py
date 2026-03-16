@@ -106,7 +106,7 @@ def save_used_video(video_id: str):
 def main():
     validate_env()
 
-    from video_finder import find_trending_news_video
+    from video_finder import find_trending_news_video_list
     from video_processor import process_video_pipeline
     from script_generator import generate_youtube_metadata
     from youtube_uploader import upload_to_youtube
@@ -114,26 +114,41 @@ def main():
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
 
-        # ── Step 1: Find trending news video ──────────────────
+        # ── Step 1: Find trending news video candidates ────────
         logger.info("🔍 Step 1/5 — Finding trending news video...")
-        video_info = find_trending_news_video()
-        if not video_info:
+        candidates = find_trending_news_video_list(top_n=5)
+        if not candidates:
             raise RuntimeError("Could not find suitable trending video. Exiting.")
 
-        video_id = video_info["video_id"]
-        logger.info(f"   Found: {video_info['title'][:70]}")
-        logger.info(f"   Duration: {video_info['duration_seconds']}s, Views: {video_info['view_count']:,}")
+        logger.info(f"   Found {len(candidates)} candidates — trying each until download succeeds...")
 
-        # ── Step 2: Download and process video ────────────────
+        # ── Step 2: Try each candidate until one downloads OK ──
         logger.info("📥 Step 2/5 — Downloading and processing video...")
-        video_path = process_video_pipeline(
-            video_id,
-            video_title=video_info["title"],
-            video_description=video_info["description"],
-            output_dir=tmp,
-        )
-        if not video_path:
-            raise RuntimeError("Failed to process video. Exiting.")
+        video_path = None
+        video_info = None
+        for i, candidate in enumerate(candidates):
+            vid_id = candidate["video_id"]
+            logger.info(f"   Trying #{i+1}: {candidate['title'][:60]} ({candidate['view_count']:,} views)")
+            vpath = process_video_pipeline(
+                vid_id,
+                video_title=candidate["title"],
+                video_description=candidate["description"],
+                output_dir=tmp,
+            )
+            if vpath:
+                video_path = vpath
+                video_info = candidate
+                logger.info(f"   ✅ Download succeeded for: {vid_id}")
+                break
+            else:
+                logger.warning(f"   ⚠️  Skipping {vid_id} (download failed) — trying next...")
+
+        if not video_path or not video_info:
+            raise RuntimeError("Failed to process any video candidate. Exiting.")
+
+        video_id = video_info["video_id"]
+        logger.info(f"   Selected: {video_info['title'][:70]}")
+        logger.info(f"   Duration: {video_info['duration_seconds']}s, Views: {video_info['view_count']:,}")
 
         size_mb = video_path.stat().st_size / (1024 * 1024)
         logger.info(f"   Processed video ready ({size_mb:.1f} MB)")

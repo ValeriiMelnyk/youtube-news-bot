@@ -230,10 +230,35 @@ def find_trending_news_video() -> Optional[Dict]:
 
     # Sort by view count — most viral first
     candidates.sort(key=lambda x: x["view_count"], reverse=True)
-    best = candidates[0]
 
-    logger.info(
-        f"✅ Best video: [{best['source_type']}] {best['title'][:70]}"
-        f"  |  {best['view_count']:,} views  |  {best['duration_seconds']//60}m"
-    )
-    return best
+    # Log top 5 candidates
+    for i, c in enumerate(candidates[:5]):
+        logger.info(
+            f"  #{i+1} [{c['source_type']}] {c['title'][:60]}"
+            f"  |  {c['view_count']:,} views  |  {c['duration_seconds']//60}m"
+        )
+
+    return candidates[0]
+
+
+def find_trending_news_video_list(top_n: int = 5) -> List[Dict]:
+    """
+    Return up to top_n trending video candidates sorted by view count.
+    Used by main.py to try multiple candidates if one fails to download.
+    """
+    used_videos = _load_used_videos()
+
+    candidates = _candidates_via_api(used_videos)
+    logger.info(f"API path returned {len(candidates)} candidates")
+
+    if not candidates:
+        logger.info("API returned nothing — trying yt-dlp trending scrape...")
+        candidates = _candidates_via_ytdlp(used_videos)
+        logger.info(f"yt-dlp path returned {len(candidates)} candidates")
+
+    if not candidates:
+        logger.error("No candidates found from any source")
+        return []
+
+    candidates.sort(key=lambda x: x["view_count"], reverse=True)
+    return candidates[:top_n]
