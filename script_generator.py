@@ -1,12 +1,12 @@
 """
-script_generator.py — Генерація сценарію через Google Gemini 2.0 Flash
-Вибирає найважливішу новину та створює 30–45 секундний сценарій
+script_generator.py — Generate Ukrainian metadata for YouTube videos via Gemini
+Creates titles, descriptions, and tags based on original video content.
 """
 
 import os
 import json
 import logging
-from typing import List, Dict
+from typing import Dict
 
 from google import genai
 from google.genai import types
@@ -23,48 +23,41 @@ SYSTEM_PROMPT = (
 )
 
 
-def generate_script(articles: List[Dict]) -> Dict:
+def generate_youtube_metadata(
+    original_title: str,
+    original_description: str,
+    channel_name: str,
+) -> Dict:
     """
-    На основі списку статей вибрати найважливішу та згенерувати:
-    - Сценарій для диктора (30–45 сек)
-    - Заголовок YouTube
-    - Заголовок для відео (короткий)
-    - 3 ключових факти для відображення
-    - Теги та опис
+    Generate Ukrainian YouTube metadata for a clipped news video.
+
+    Args:
+        original_title: Original video title from YouTube
+        original_description: Original video description
+        channel_name: Original channel name (for credit)
+
+    Returns:
+        Dict with: yt_title, description, tags
     """
 
-    articles_text = "\n\n".join([
-        f"[{i + 1}] ДЖЕРЕЛО: {a['source']} ({a['lang'].upper()})\n"
-        f"ЗАГОЛОВОК: {a['title']}\n"
-        f"ОПИС: {a['summary'][:400]}"
-        for i, a in enumerate(articles[:15])
-    ])
+    user_prompt = f"""На основі оригінального відео згенеруй українські метадані для YouTube Short.
 
-    user_prompt = f"""Ось сьогоднішні топ-новини:
+ОРИГІНАЛЬНЕ ВІДЕО:
+Заголовок: {original_title}
+Опис: {original_description[:300]}
+Канал: {channel_name}
 
-{articles_text}
+ТВОЄ ЗАВДАННЯ:
+1. Створи привабливий YouTube заголовок українською (до 60 символів)
+2. Напиши опис з кредитом оригінальному каналу (100-130 символів)
+3. Вибери 6-8 релевантних тегів (суміш українських та англійських)
 
-━━━ ТВОЄ ЗАВДАННЯ ━━━
-1. Вибери ОДНУ найбільш важливу новину (пріоритет: геополітика, конфлікти, великі рішення)
-2. Напиши сценарій для диктора ВИКЛЮЧНО українською мовою
-3. Сценарій: 100–140 слів, 30–45 секунд читання
-4. Тон: серйозний, авторитетний, нейтральний
-
-Поверни ТІЛЬКИ цей JSON (без markdown, без пояснень):
+Поверни ТІЛЬКИ цей JSON (без markdown):
 
 {{
-  "selected_index": <число 1-15>,
-  "yt_title": "<YouTube заголовок до 60 символів, природний>",
-  "title_overlay": "<заголовок для відео: 3–6 ВЕЛИКИХ СЛІВ українською>",
-  "script": "<сценарій 100-140 слів українською. Починай з чіпляючого речення. Закінчуй закликом підписатися>",
-  "key_facts": [
-    "<факт 1: до 7 слів>",
-    "<факт 2: до 7 слів>",
-    "<факт 3: до 7 слів>"
-  ],
-  "pexels_keywords": "<2-3 АНГЛІЙСЬКИХ слова для пошуку відеофону, напр: war military conflict>",
-  "description": "<опис для YouTube 100-130 символів>",
-  "tags": ["новини", "Україна", "світ", "<конкретний тег4>", "<конкретний тег5>", "Shorts"]
+  "yt_title": "<Привабливий заголовок українською, до 60 символів>",
+  "description": "<Опис з кредитом оригінальному каналу. Початок інформативний, кінець: Оригінальне відео від {{channel_name}}>",
+  "tags": ["новини", "Україна", "світ", "<тег4>", "<тег5>", "<тег6>", "Shorts", "BreakingNews"]
 }}"""
 
     try:
@@ -73,49 +66,41 @@ def generate_script(articles: List[Dict]) -> Dict:
             contents=user_prompt,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
-                temperature=0.65,
-                max_output_tokens=1200,
+                temperature=0.5,
+                max_output_tokens=600,
                 response_mime_type="application/json",
             )
         )
 
         raw = response.text.strip()
-        # Видаляємо можливі markdown-огортки
+        # Remove possible markdown wrappers
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
+
         result = json.loads(raw)
 
-        required_fields = ["yt_title", "title_overlay", "script", "key_facts", "pexels_keywords"]
+        required_fields = ["yt_title", "description", "tags"]
         for field in required_fields:
             if field not in result:
-                raise ValueError(f"Gemini не повернув поле: {field}")
+                raise ValueError(f"Gemini did not return field: {field}")
 
-        logger.info(f"Сценарій згенеровано. Слів у сценарії: {len(result['script'].split())}")
+        logger.info(f"Generated metadata: {result['yt_title']}")
         return result
 
     except json.JSONDecodeError as e:
-        logger.error(f"Gemini повернув некоректний JSON: {e}")
-        return _fallback_script(articles[0] if articles else {})
+        logger.error(f"Gemini returned invalid JSON: {e}")
+        return _fallback_metadata(original_title, channel_name)
     except Exception as e:
-        logger.error(f"Помилка генерації сценарію: {e}")
-        return _fallback_script(articles[0] if articles else {})
+        logger.error(f"Error generating metadata: {e}")
+        return _fallback_metadata(original_title, channel_name)
 
 
-def _fallback_script(article: Dict) -> Dict:
-    """Запасний сценарій якщо Gemini недоступний"""
-    title = article.get("title", "Важливі новини дня")
+def _fallback_metadata(title: str, channel: str) -> Dict:
+    """Fallback metadata if Gemini unavailable"""
     return {
         "yt_title": title[:60],
-        "title_overlay": "ВАЖЛИВІ НОВИНИ",
-        "script": (
-            f"Увага — важлива новина. {title}. "
-            "Слідкуйте за нашим каналом, щоб не пропустити найважливіші події у світі. "
-            "Підпишіться та натисніть дзвіночок для щоденних оновлень."
-        ),
-        "key_facts": ["Стежте за оновленнями", "Підпишіться на канал", "Нові відео щодня"],
-        "pexels_keywords": "world news politics",
-        "description": "Найважливіші новини дня. Підпишіться щоб не пропустити!",
-        "tags": ["новини", "Україна", "світ", "Shorts"]
+        "description": f"Хай-лайт новини. Оригінал від {channel}. Підписуйтеся!",
+        "tags": ["новини", "Україна", "світ", "breaking", "news", "Shorts"]
     }

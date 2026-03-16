@@ -42,8 +42,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             ffmpeg \
             fonts-dejavu-core \
+            fonts-dejavu \
             fonts-liberation
-          echo "✅ ffmpeg та шрифти встановлено"
+          echo "✅ ffmpeg and fonts installed"
 
       # ── 4. Python пакети ──────────────────────────────────
       - name: 📦 Install Python packages
@@ -52,25 +53,36 @@ jobs:
           pip install -r requirements.txt
           echo "✅ Python залежності встановлено"
 
-      # ── 5. Генерація та публікація ────────────────────────
+      # ── 5. Configure git for commits ──────────────────────
+      - name: 🔧 Configure git
+        run: |
+          git config --global user.email "bot@github.com"
+          git config --global user.name "YouTube News Bot"
+
+      # ── 6. Run News Bot ──────────────────────────────────────
       - name: 🚀 Run News Bot
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           python main.py
 
-      # ── 6. Повідомлення про успіх ─────────────────────────
+      # ── 7. Push changes ──────────────────────────────────────
+      - name: 📤 Push used_videos.txt
+        if: success()
+        run: |
+          git push origin || echo "No changes to push"
+
+      # ── 8. Success message ──────────────────────────────────
       - name: ✅ Done
         if: success()
-        run: echo "🎉 Відео успішно опубліковано на YouTube!"
+        run: echo "🎉 Video successfully published to YouTube!"
 
-      # ── 7. Повідомлення про помилку ───────────────────────
+      # ── 9. Failure message ──────────────────────────────────
       - name: ❌ Failed
         if: failure()
         run: |
-          echo "❌ Бот завершився з помилкою"
-          echo "Перевір логи вище для деталей"
+          echo "❌ Bot finished with error"
+          echo "Check logs above for details"

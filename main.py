@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
 =============================================================
-  Autonomous YouTube Shorts News Bot
-  Автономний бот для генерації YouTube Shorts з новинами
+  YouTube Shorts News Bot (Rewritten)
+  Автономний бот для публікації трендових новин у YouTube Shorts
 =============================================================
 Щодня автоматично:
-  1. Збирає топ-новини зі світових джерел
-  2. Вибирає найважливішу через Google Gemini 1.5 Flash
-  3. Генерує сценарій українською мовою
-  4. Озвучує безкоштовним Edge TTS (uk-UA-OstapNeural)
-  5. Монтує вертикальне відео 1080x1920
-  6. Публікує на YouTube як Short
+  1. Знаходить трендові новинні відео на YouTube (YouTube Data API)
+  2. Завантажує відео (yt-dlp)
+  3. Обрізає 45-секундний клип, крощує до 9:16 (вертикаль)
+  4. Завантажує субтитри YouTube та перекладає на українську (Gemini)
+  5. Записує українські субтитри на відео
+  6. Генерує українські заголовок, опис, теги (Gemini)
+  7. Публікує як YouTube Short
 """
 
 import os
 import logging
 import tempfile
+import subprocess
 from pathlib import Path
 
 # ─── Логування ───────────────────────────────────────────────
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def validate_env():
-    """Перевірка наявності обов'язкових змінних середовища"""
+    """Validate required environment variables"""
     required = [
         "GEMINI_API_KEY",
         "YOUTUBE_CLIENT_ID",
@@ -38,70 +40,127 @@ def validate_env():
     missing = [v for v in required if not os.environ.get(v)]
     if missing:
         raise EnvironmentError(
-            f"❌ Відсутні обов'язкові змінні: {', '.join(missing)}\n"
-            "Перевір GitHub Secrets або .env файл"
+            f"Missing required env vars: {', '.join(missing)}\n"
+            "Check GitHub Secrets or .env file"
         )
+
+
+def save_used_video(video_id: str):
+    """Save video ID to used_videos.txt and git commit"""
+    try:
+        used_file = Path(__file__).parent / "used_videos.txt"
+
+        # Append video ID
+        with open(used_file, "a") as f:
+            f.write(f"{video_id}\n")
+
+        logger.info(f"Saved video ID to used_videos.txt: {video_id}")
+
+        # Git commit and push
+        repo_dir = Path(__file__).parent
+        os.chdir(repo_dir)
+
+        # Configure git if needed
+        subprocess.run(
+            ["git", "config", "user.email", "bot@github.com"],
+            capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "YouTube News Bot"],
+            capture_output=True
+        )
+
+        # Add and commit
+        subprocess.run(
+            ["git", "add", "used_videos.txt"],
+            capture_output=True,
+            check=True
+        )
+        result = subprocess.run(
+            ["git", "commit", "-m", f"Add used video: {video_id}"],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            logger.info(f"Git commit successful")
+
+            # Push
+            push_result = subprocess.run(
+                ["git", "push"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if push_result.returncode == 0:
+                logger.info("Git push successful")
+            else:
+                logger.warning(f"Git push failed: {push_result.stderr}")
+        else:
+            logger.warning(f"Git commit failed (nothing to commit or error)")
+
+    except Exception as e:
+        logger.error(f"Error saving used video to git: {e}")
 
 
 def main():
     validate_env()
 
-    from news_fetcher import fetch_top_news
-    from script_generator import generate_script
-    from tts_generator import generate_audio
-    from video_creator import create_video
+    from video_finder import find_trending_news_video
+    from video_processor import process_video_pipeline
+    from script_generator import generate_youtube_metadata
     from youtube_uploader import upload_to_youtube
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
 
-        # ── Крок 1: Збір новин ──────────────────────────────
-        logger.info("📰 Крок 1/5 — Завантаження новин...")
-        articles = fetch_top_news()
-        if not articles:
-            raise RuntimeError("Не вдалось отримати новини. Перевір інтернет-з'єднання.")
-        logger.info(f"   Знайдено {len(articles)} статей з {len(set(a['source'] for a in articles))} джерел")
+        # ── Step 1: Find trending news video ──────────────────
+        logger.info("🔍 Step 1/5 — Finding trending news video...")
+        video_info = find_trending_news_video()
+        if not video_info:
+            raise RuntimeError("Could not find suitable trending video. Exiting.")
 
-        # ── Крок 2: Генерація сценарію ──────────────────────
-        logger.info("✍️  Крок 2/5 — Генерація сценарію (Gemini 1.5 Flash)...")
-        script_data = generate_script(articles)
-        logger.info(f"   Заголовок: {script_data.get('yt_title', '—')}")
-        logger.info(f"   Ключових фактів: {len(script_data.get('key_facts', []))}")
+        video_id = video_info["video_id"]
+        logger.info(f"   Found: {video_info['title'][:70]}")
+        logger.info(f"   Duration: {video_info['duration_seconds']}s, Views: {video_info['view_count']:,}")
 
-        # ── Крок 3: Озвучення ───────────────────────────────
-        logger.info("🎙️  Крок 3/5 — Генерація аудіо (Edge TTS, uk-UA-OstapNeural)...")
-        audio_path = generate_audio(
-            script=script_data["script"],
-            output_path=tmp / "voice.mp3"
-        )
-        logger.info(f"   Аудіо збережено ({audio_path.stat().st_size // 1024} KB)")
+        # ── Step 2: Download and process video ────────────────
+        logger.info("📥 Step 2/5 — Downloading and processing video...")
+        video_path = process_video_pipeline(video_id, tmp)
+        if not video_path:
+            raise RuntimeError("Failed to process video. Exiting.")
 
-        # ── Крок 4: Монтаж відео ────────────────────────────
-        logger.info("🎬 Крок 4/5 — Монтаж відео (1080x1920)...")
-        video_path = create_video(
-            title=script_data.get("title_overlay", script_data.get("yt_title", "НОВИНИ")),
-            key_facts=script_data.get("key_facts", []),
-            audio_path=audio_path,
-            topic_keywords=script_data.get("pexels_keywords", "world politics conflict"),
-            tmp_dir=tmp,
-            output_path=tmp / "short.mp4"
-        )
         size_mb = video_path.stat().st_size / (1024 * 1024)
-        logger.info(f"   Відео готове ({size_mb:.1f} MB)")
+        logger.info(f"   Processed video ready ({size_mb:.1f} MB)")
 
-        # ── Крок 5: Публікація ──────────────────────────────
-        logger.info("🚀 Крок 5/5 — Публікація на YouTube...")
-        video_id = upload_to_youtube(
+        # ── Step 3: Generate Ukrainian metadata ────────────────
+        logger.info("✍️  Step 3/5 — Generating Ukrainian metadata...")
+        metadata = generate_youtube_metadata(
+            original_title=video_info["title"],
+            original_description=video_info["description"],
+            channel_name=video_info["channel_name"],
+        )
+        logger.info(f"   Title: {metadata['yt_title']}")
+        logger.info(f"   Tags: {len(metadata['tags'])} items")
+
+        # ── Step 4: Upload to YouTube ────────────────────────
+        logger.info("🚀 Step 4/5 — Uploading to YouTube...")
+        uploaded_id = upload_to_youtube(
             video_path=video_path,
-            title=script_data.get("yt_title", "Новини дня"),
-            description=script_data.get("description", "Найважливіші новини сьогодні"),
-            tags=script_data.get("tags", ["новини", "Україна", "world"])
+            title=metadata.get("yt_title", "Новини"),
+            description=metadata.get("description", "Новинний клип"),
+            tags=metadata.get("tags", ["новини", "Shorts"])
         )
 
-        logger.info("=" * 50)
-        logger.info("✅ Відео успішно опубліковано!")
-        logger.info(f"🔗 https://youtube.com/shorts/{video_id}")
-        logger.info("=" * 50)
+        # ── Step 5: Save video ID and commit ─────────────────
+        logger.info("💾 Step 5/5 — Saving used video ID...")
+        save_used_video(video_id)
+
+        logger.info("=" * 60)
+        logger.info("✅ Video successfully published!")
+        logger.info(f"🔗 https://youtube.com/shorts/{uploaded_id}")
+        logger.info(f"Source: {video_info['channel_name']}")
+        logger.info("=" * 60)
 
 
 if __name__ == "__main__":

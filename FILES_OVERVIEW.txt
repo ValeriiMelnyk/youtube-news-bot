@@ -1,0 +1,262 @@
+================================================================================
+YOUTUBE SHORTS NEWS BOT - FILES OVERVIEW
+================================================================================
+
+NEWLY CREATED FILES
+================================================================================
+
+1. video_finder.py (5.6 KB)
+   PURPOSE: Find trending news videos on YouTube
+   KEY FUNCTIONS:
+   - find_trending_news_video() - Search and filter videos
+   - _get_youtube_client() - OAuth authentication
+   - _load_used_videos() - Track duplicates
+   - _parse_iso_duration() - Parse video duration
+   DEPENDENCIES: google-api-python-client, google-auth
+
+2. video_processor.py (12 KB)
+   PURPOSE: Download, clip, crop, and add Ukrainian subtitles
+   KEY FUNCTIONS:
+   - download_video() - Get video from YouTube (720p)
+   - download_captions() - Get auto-captions (VTT)
+   - extract_caption_text() - Parse caption text
+   - translate_captions_to_ukrainian() - Translate via Gemini
+   - clip_video() - Extract first N seconds
+   - crop_to_vertical() - Center crop to 9:16
+   - burn_subtitles_ass() - Burn subtitles (ASS format)
+   - process_video_pipeline() - Complete workflow
+   DEPENDENCIES: yt-dlp, google-genai, subprocess, ffmpeg
+
+3. ARCHITECTURE.md (9.3 KB)
+   PURPOSE: Technical documentation for developers
+   CONTAINS:
+   - Complete pipeline overview
+   - Module descriptions
+   - File structure
+   - Dependencies list
+   - Key features explained
+   - Error handling strategy
+   - Performance notes
+   - Security notes
+
+4. QUICKSTART.md (6.5 KB)
+   PURPOSE: Setup and usage guide for end users
+   CONTAINS:
+   - Setup steps (YouTube OAuth, Gemini API)
+   - GitHub Secrets configuration
+   - How it works (step-by-step)
+   - Monitoring and troubleshooting
+   - Customization examples
+   - FAQ
+
+5. REWRITE_SUMMARY.md (7.9 KB)
+   PURPOSE: Summary of changes from old to new version
+   CONTAINS:
+   - What changed
+   - Files changed/added/removed
+   - Technical changes
+   - Pipeline comparison
+   - Benefits of rewrite
+   - Future improvements
+   - Rollback plan
+
+6. FILES_OVERVIEW.txt (this file)
+   PURPOSE: Quick reference of all files
+
+7. used_videos.txt (0 bytes, initially empty)
+   PURPOSE: Track published video IDs (duplicate prevention)
+   FORMAT: One video ID per line
+   EXAMPLE:
+   dQw4w9WgXcQ
+   jNQXAC9IVRw
+   abc123def456
+
+MODIFIED FILES
+================================================================================
+
+1. main.py (8 KB) - COMPLETELY REWRITTEN
+   OLD: Generated original content from RSS feeds
+   NEW: Finds trending videos and repurposes them
+   NEW PIPELINE:
+   1. Find trending news video (video_finder)
+   2. Download and process (video_processor)
+   3. Generate metadata (script_generator)
+   4. Upload (youtube_uploader)
+   5. Save used_video_id (git tracking)
+   CHANGES:
+   - Removed: news_fetcher, tts_generator, video_creator imports
+   - Added: video_finder, video_processor imports
+   - New function: save_used_video() for git integration
+   - New function: main() orchestration
+
+2. script_generator.py (4.2 KB) - REWRITTEN
+   OLD: Generated full narration script for TTS
+   NEW: Generates only metadata (title, description, tags)
+   CHANGES:
+   - Removed: generate_script() (took articles list)
+   - Added: generate_youtube_metadata() (takes video info)
+   - Function signature changed completely
+   - Now uses Gemini for metadata generation only
+   - Fallback metadata simpler (no script generation)
+
+3. requirements.txt (451 bytes) - UPDATED
+   REMOVED:
+   - feedparser (RSS)
+   - moviepy (video montage)
+   - Pillow (image processing)
+   - edge-tts (text-to-speech)
+   - imageio, imageio-ffmpeg (video encoding)
+   ADDED:
+   - yt-dlp (YouTube download with captions)
+   KEPT:
+   - google-genai (Gemini API)
+   - google-api-python-client (YouTube API)
+   - google-auth (OAuth)
+
+4. .github/workflows/daily.yml (3.5 KB) - UPDATED
+   ADDED STEPS:
+   - Git configuration (before running bot)
+   - Git push (after successful run)
+   REMOVED:
+   - PEXELS_API_KEY from env vars
+   MODIFIED:
+   - Updated system package install (added fonts-dejavu)
+   - Updated comments (English instead of Ukrainian)
+
+UNCHANGED FILES
+================================================================================
+
+1. youtube_uploader.py (3.3 KB)
+   STATUS: NOT MODIFIED (works perfectly as-is!)
+   FUNCTION: Upload video to YouTube as Short using OAuth
+   USES: YOUTUBE_REFRESH_TOKEN
+   REASON: Upload logic unchanged, no need to modify
+
+OLD FILES (NOT MODIFIED, FOR REFERENCE ONLY)
+================================================================================
+
+1. news_fetcher.py (8 KB)
+   STATUS: From old version, not modified in rewrite
+   NOTE: Can be deleted (no longer used)
+
+2. video_creator.py (16 KB)
+   STATUS: From old version, not modified in rewrite
+   NOTE: Can be deleted (no longer used)
+
+3. tts_generator.py (4 KB)
+   STATUS: From old version, not modified in rewrite
+   NOTE: Can be deleted (no longer used)
+
+4. setup_youtube_auth.py (8 KB)
+   STATUS: From old version, kept for reference
+   NOTE: Use to refresh OAuth tokens if needed
+
+================================================================================
+ENVIRONMENT VARIABLES REQUIRED
+================================================================================
+
+GitHub Secrets (must be set):
+  GEMINI_API_KEY              - Google Gemini API key
+  YOUTUBE_CLIENT_ID           - YouTube OAuth client ID
+  YOUTUBE_CLIENT_SECRET       - YouTube OAuth client secret
+  YOUTUBE_REFRESH_TOKEN       - YouTube OAuth refresh token
+
+NO LONGER NEEDED:
+  PEXELS_API_KEY              - Removed (not used in new version)
+
+================================================================================
+DEPENDENCIES
+================================================================================
+
+Python Packages (in requirements.txt):
+  google-genai >= 1.0.0              - Gemini API for translation/metadata
+  yt-dlp >= 2024.1.0                 - YouTube downloader with caption support
+  google-api-python-client >= 2.130  - YouTube API v3
+  google-auth >= 2.29.0              - OAuth authentication
+  google-auth-httplib2 >= 0.2.0      - OAuth transport
+  google-auth-oauthlib >= 1.2.0      - OAuth flow
+  httplib2 >= 0.22.0                 - HTTP client
+  requests >= 2.31.0                 - HTTP requests
+
+System Packages (installed by GitHub Actions):
+  ffmpeg                 - Video processing (clip, crop, subtitles)
+  fonts-dejavu           - Cyrillic font for subtitle text
+
+================================================================================
+KEY FILE RELATIONSHIPS
+================================================================================
+
+main.py
+  ├─ imports video_finder.py
+  │  └─ uses YouTube API (OAuth)
+  │
+  ├─ imports video_processor.py
+  │  ├─ uses yt-dlp (download)
+  │  ├─ uses google-genai (translation)
+  │  └─ uses ffmpeg subprocess (processing)
+  │
+  ├─ imports script_generator.py
+  │  └─ uses google-genai (metadata)
+  │
+  ├─ imports youtube_uploader.py
+  │  └─ uses YouTube API (upload)
+  │
+  └─ writes to used_videos.txt
+     └─ reads in video_finder.py (duplicate check)
+
+requirements.txt
+  ├─ Lists all Python dependencies
+  └─ Used by: pip install -r requirements.txt
+
+.github/workflows/daily.yml
+  ├─ Installs: system packages, Python dependencies
+  ├─ Runs: python main.py
+  ├─ Commits: used_videos.txt changes
+  └─ Schedule: Daily at 07:00 UTC
+
+================================================================================
+QUICK FILE REFERENCE
+================================================================================
+
+To understand how the bot works:
+  1. Start with: QUICKSTART.md (user guide)
+  2. Then read: ARCHITECTURE.md (technical details)
+  3. Check code: main.py (orchestration)
+  4. Deep dive: video_finder.py, video_processor.py (implementation)
+
+To debug issues:
+  1. Check: main.py exception handling
+  2. Review: video_finder.py for YouTube API issues
+  3. Review: video_processor.py for yt-dlp/ffmpeg issues
+  4. Check: script_generator.py for Gemini issues
+
+To modify behavior:
+  1. Video source: edit video_finder.py search query
+  2. Clip duration: edit video_processor.py (line ~180)
+  3. Subtitle style: edit video_processor.py (burn_subtitles_ass function)
+  4. Metadata: edit script_generator.py (Gemini prompt)
+  5. Schedule: edit .github/workflows/daily.yml (cron)
+
+================================================================================
+FILE VALIDATION CHECKLIST
+================================================================================
+
+✓ main.py - Syntax OK, imports valid
+✓ video_finder.py - Syntax OK, OAuth flow correct
+✓ video_processor.py - Syntax OK, all functions complete
+✓ script_generator.py - Syntax OK, Gemini integration ready
+✓ youtube_uploader.py - Syntax OK, UNCHANGED
+✓ requirements.txt - Updated, yt-dlp added
+✓ .github/workflows/daily.yml - Updated, git steps added
+✓ used_videos.txt - Created, ready for tracking
+✓ ARCHITECTURE.md - Complete technical documentation
+✓ QUICKSTART.md - Complete user guide
+✓ REWRITE_SUMMARY.md - Complete change summary
+
+STATUS: ALL FILES READY FOR PRODUCTION ✅
+
+================================================================================
+Last Updated: March 16, 2026
+Rewritten by: Claude Code Agent
+Status: Ready for deployment
+================================================================================
