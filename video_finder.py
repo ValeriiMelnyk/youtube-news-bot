@@ -38,10 +38,11 @@ PODCAST_QUERIES = [
 
 
 def _get_youtube_client():
-    """Create YouTube API client using API key (read-only, no OAuth needed)"""
-    api_key = os.environ.get("GEMINI_API_KEY")
+    """Create YouTube API client using a dedicated YouTube Data API key."""
+    # Prefer YOUTUBE_API_KEY; fall back to GEMINI_API_KEY for backwards compat
+    api_key = os.environ.get("YOUTUBE_API_KEY") or os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not set (used as YouTube Data API key)")
+        raise RuntimeError("Neither YOUTUBE_API_KEY nor GEMINI_API_KEY is set")
     return build("youtube", "v3", developerKey=api_key)
 
 
