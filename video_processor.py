@@ -50,8 +50,16 @@ def download_video(video_id: str, output_dir: Path) -> Optional[Path]:
             "quiet": False,
             "no_warnings": False,
             "socket_timeout": 30,
-            "extractor_args": {"youtube": {"player_client": ["ios", "mweb"]}},
+            # Try multiple clients: android_creator doesn't require PO token;
+            # tv_embedded uses embedded player endpoint (less restricted)
+            "extractor_args": {"youtube": {"player_client": ["android_creator", "tv_embedded", "android_vr", "ios"]}},
         }
+
+        # Use cookies file if available (set via YOUTUBE_COOKIES_FILE env var)
+        cookies_file = os.environ.get("YOUTUBE_COOKIES_FILE")
+        if cookies_file and os.path.exists(cookies_file):
+            ydl_opts["cookiefile"] = cookies_file
+            logger.info(f"Using cookies file: {cookies_file}")
 
         logger.info(f"Downloading video {video_id}...")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -93,8 +101,12 @@ def download_captions(video_id: str, output_dir: Path) -> Optional[Path]:
             "quiet": False,
             "no_warnings": False,
             "subtitlesformat": "vtt",
-            "extractor_args": {"youtube": {"player_client": ["ios", "mweb"]}},
+            "extractor_args": {"youtube": {"player_client": ["android_creator", "tv_embedded", "android_vr", "ios"]}},
         }
+
+        cookies_file = os.environ.get("YOUTUBE_COOKIES_FILE")
+        if cookies_file and os.path.exists(cookies_file):
+            ydl_opts["cookiefile"] = cookies_file
 
         logger.info(f"Downloading captions for {video_id}...")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

@@ -59,7 +59,18 @@ jobs:
           git config --global user.email "bot@github.com"
           git config --global user.name "YouTube News Bot"
 
-      # ── 6. Run News Bot ──────────────────────────────────────
+      # ── 6. Write YouTube cookies (if provided) ───────────────
+      - name: 🍪 Prepare YouTube cookies
+        run: |
+          if [ -n "${{ secrets.YOUTUBE_COOKIES }}" ]; then
+            echo "${{ secrets.YOUTUBE_COOKIES }}" | base64 -d > /tmp/yt_cookies.txt
+            echo "YOUTUBE_COOKIES_FILE=/tmp/yt_cookies.txt" >> $GITHUB_ENV
+            echo "✅ YouTube cookies loaded"
+          else
+            echo "ℹ️  No YOUTUBE_COOKIES secret found — will try without cookies"
+          fi
+
+      # ── 7. Run News Bot ──────────────────────────────────────
       - name: 🚀 Run News Bot
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -67,21 +78,22 @@ jobs:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_COOKIES_FILE: ${{ env.YOUTUBE_COOKIES_FILE }}
         run: |
           python main.py
 
-      # ── 7. Push changes ──────────────────────────────────────
+      # ── 8. Push changes ──────────────────────────────────────
       - name: 📤 Push used_videos.txt
         if: success()
         run: |
           git push origin || echo "No changes to push"
 
-      # ── 8. Success message ──────────────────────────────────
+      # ── 9. Success message ──────────────────────────────────
       - name: ✅ Done
         if: success()
         run: echo "🎉 Video successfully published to YouTube!"
 
-      # ── 9. Failure message ──────────────────────────────────
+      # ── 10. Failure message ─────────────────────────────────
       - name: ❌ Failed
         if: failure()
         run: |
