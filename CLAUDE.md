@@ -83,6 +83,8 @@ main.py
 
 These are stored as GitHub Actions Secrets and injected during workflow runs. For local development, copy `.env.example` to `.env` and fill in values.
 
+> **Warning:** `.env.example` is outdated — it still references `OPENAI_API_KEY` and `PEXELS_API_KEY` from an earlier version of the bot. Use the table above as the authoritative reference for required variables.
+
 ---
 
 ## Key Conventions
@@ -111,21 +113,31 @@ Keep modules single-responsibility. Do not add YouTube upload logic to the proce
 
 ### Video Specs (do not change without updating ffmpeg commands)
 - Output resolution: **1080x1920** (9:16 vertical)
-- Clip duration: **45–50 seconds**
+- Clip duration: **50 seconds** (hardcoded in `process_video_pipeline` — both `find_best_clip_start(clip_duration=50)` and `clip_video(duration=50)`)
 - Format: **MP4** (H.264 video, AAC audio)
 - Input: up to **720p** (yt-dlp format selector: `best[height<=720][ext=mp4]`)
 
 ### Subtitle Format (ASS)
 - Font: **DejaVu Sans Bold** (required for Cyrillic; installed via `fonts-dejavu` in CI)
-- Size: 56pt (inactive words), 66pt (active word)
-- Color: Yellow (`&H00FFFF00`) with black border
-- Animation: word-by-word, each word highlighted exactly when spoken
+- Font file path (hardcoded): `/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf`
+- Size: **52pt** (inactive/other words), **66pt** (active/current word)
+- Color: Yellow (`&H00FFFF00`) active word, White (`&H00FFFFFF`) inactive words, black border
+- Animation: word-by-word; each word displayed alone as the current highlighted word
 - Alignment: bottom-center (ASS alignment 2)
 
 ### Gemini Model
 - Current model: **`gemini-2.0-flash-lite`** (free tier)
 - Used in both `video_processor.py` and `script_generator.py`
 - If switching models, update both files
+
+### Duplicate Function: `generate_hook_text`
+- Both `video_processor.py` and `script_generator.py` define `generate_hook_text()`
+- The pipeline uses the one in **`video_processor.py`** (called from `process_video_pipeline`)
+- The one in `script_generator.py` is unused dead code — do not call it from `main.py`
+
+### YouTube API Key Fallback
+- `video_finder._candidates_via_api()` uses `YOUTUBE_API_KEY` **or falls back to `GEMINI_API_KEY`** if the former is absent
+- This means the bot can discover videos with only `GEMINI_API_KEY` set, but using `YOUTUBE_API_KEY` is preferred
 
 ### YouTube Upload Settings
 - Category: **25** (News & Politics)
